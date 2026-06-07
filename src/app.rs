@@ -2,8 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
+use iced::Length;
 use iced::Task;
 use iced::widget;
+use iced::widget::button;
+use iced::window;
 use image::ImageReader;
 
 use crate::message::Message;
@@ -28,7 +31,16 @@ impl App {
 
   pub async fn zob() -> Result<MyImage> {
     let args = Args::parse();
-    let image = MyImage(ImageReader::open(args.image)?.decode()?);
+    let image = ImageReader::open(args.image)?.decode()?;
+    let image = MyImage(
+      image
+        .resize(
+          image.width() / 10,
+          image.height() / 10,
+          image::imageops::FilterType::Nearest,
+        )
+        .to_rgba8(),
+    );
 
     Ok(image)
   }
@@ -44,15 +56,36 @@ impl App {
     match self {
       Self::Loading => widget::column![widget::text("loading...")],
       Self::Failed => widget::column![widget::text("failed")],
-      Self::Loaded(image) => widget::column![widget::image(image.clone())],
+      Self::Loaded(image) => widget::column![
+        widget::image(image.clone()),
+        button("Dither")
+          .height(Length::Fill)
+          .width(Length::Fill)
+          .on_press_with(move || { Message::ImageLoaded(image.ordered_dither()) })
+      ],
     }
   }
 
   pub fn update(&mut self, message: Message) -> Task<Message> {
     match message {
-      Message::ImageLoaded(image) => *self = Self::Loaded(image),
-      Message::ImageNotFound => *self = Self::Failed,
-    };
-    Task::none()
+      Message::ImageLoaded(image) => {
+        let width = image.0.width() as f32;
+        let height = image.0.height() as f32;
+        *self = Self::Loaded(image);
+        window::latest().and_then(move |id| {
+          window::resize(
+            id,
+            iced::Size {
+              width,
+              height: height + 30.,
+            },
+          )
+        })
+      }
+      Message::ImageNotFound => {
+        *self = Self::Failed;
+        Task::none()
+      }
+    }
   }
 }
