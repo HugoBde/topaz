@@ -24,6 +24,8 @@ pub enum App {
   Failed,
 }
 
+const TARGET_HEIGHT: u32 = 700;
+
 impl App {
   pub fn new() -> (App, Task<Message>) {
     (App::Loading, Task::perform(App::zob(), App::zab))
@@ -32,15 +34,18 @@ impl App {
   pub async fn zob() -> Result<MyImage> {
     let args = Args::parse();
     let image = ImageReader::open(args.image)?.decode()?;
-    let image = MyImage(
-      image
+    let rsz_factor = image.height() / TARGET_HEIGHT;
+    let image = MyImage {
+      inner:  image
         .resize(
-          image.width() / 10,
-          image.height() / 10,
+          image.width() / rsz_factor,
+          image.height() / rsz_factor,
           image::imageops::FilterType::Nearest,
         )
+        .grayscale()
         .to_rgba8(),
-    );
+      dither: 0,
+    };
 
     Ok(image)
   }
@@ -48,7 +53,10 @@ impl App {
   pub fn zab(boot_res: Result<MyImage>) -> Message {
     match boot_res {
       Ok(image) => Message::ImageLoaded(image),
-      Err(_) => Message::ImageNotFound,
+      Err(e) => {
+        eprintln!("{e}");
+        Message::ImageNotFound
+      }
     }
   }
 
@@ -69,8 +77,8 @@ impl App {
   pub fn update(&mut self, message: Message) -> Task<Message> {
     match message {
       Message::ImageLoaded(image) => {
-        let width = image.0.width() as f32;
-        let height = image.0.height() as f32;
+        let width = image.inner.width() as f32;
+        let height = image.inner.height() as f32;
         *self = Self::Loaded(image);
         window::latest().and_then(move |id| {
           window::resize(
